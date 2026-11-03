@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coffee machine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #131e27;
+    --panel: #1b2a35;
+    --line: #2f4452;
+    --ink: #eef3f5;
+    --mute: #93a9b5;
+    --amber: #e9a23b;
+    --amber-ink: #1d1304;
+    --ok: #6fcf97;
+    --display: "Bricolage Grotesque", system-ui, sans-serif;
+    --body: "Figtree", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--body);
+    font-size: 18px; line-height: 1.45;
+    display: flex; flex-direction: column;
+  }
+  :focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+
+  /* top bar */
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 32px; gap: 16px;
+  }
+  .brand { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .01em; }
+  .conn { display: flex; align-items: center; gap: 12px; color: var(--mute); font-size: 15px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #566a76; }
+  .conn.on .dot { background: var(--ok); }
+  .conn.on { color: var(--ink); }
+  .btn-ghost {
+    background: transparent; color: var(--ink); border: 1.5px solid var(--line);
+    border-radius: 999px; padding: 8px 16px; font: 500 15px var(--body); cursor: pointer;
+  }
+  .btn-ghost:hover { border-color: var(--mute); }
+
+  /* layout */
+  main {
+    flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 8px 32px 32px;
+    display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.1fr);
+    gap: 48px; align-items: center;
+  }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; gap: 16px; } }
+
+  /* cup */
+  .stage { display: flex; justify-content: center; }
+  #cup { width: min(100%, 360px); height: auto; overflow: visible; }
+  .cup-wall { fill: rgba(255,255,255,.05); stroke: #dbe6ea; stroke-width: 4; stroke-linejoin: round; }
+  .handle { fill: none; stroke: #dbe6ea; stroke-width: 4; stroke-linecap: round; }
+  .saucer { fill: #243846; stroke: var(--line); stroke-width: 2; }
+  .layer { transition: y 3.5s ease-in-out, height 3.5s ease-in-out; }
+  #coffee { fill: #4a2a18; } #water { fill: #8a5a35; } #milk { fill: #ecd9bd; }
+  .sugar circle { fill: #fff; opacity: 0; transform: translateY(-14px); transition: opacity .8s, transform 1.6s ease-in; }
+  .sugar.on circle { opacity: .95; transform: translateY(0); }
+  .steam path { fill: none; stroke: #c9d8de; stroke-width: 4; stroke-linecap: round; opacity: 0; }
+  body[data-screen="pickup"] .steam path, body[data-screen="done"] .steam path { animation: steam 2.8s ease-in-out infinite; }
+  .steam path:nth-child(2) { animation-delay: .9s !important; } .steam path:nth-child(3) { animation-delay: 1.8s !important; }
+  @keyframes steam { 0% { opacity: 0; transform: translateY(10px); } 40% { opacity: .7; } 100% { opacity: 0; transform: translateY(-16px); } }
+  .ghost-cup { fill: none; stroke: var(--amber); stroke-width: 3; stroke-dasharray: 8 9; opacity: 0; }
+  body[data-screen="idle"] .ghost-cup { opacity: 1; animation: pulse 2.4s ease-in-out infinite; }
+  body[data-screen="idle"] .cup-wall, body[data-screen="idle"] .handle { opacity: .25; }
+  body[data-screen="menu"] .layer, body[data-screen="menu"] .sugar { opacity: .6; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* panels */
+  section[hidden] { display: none; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(34px, 5vw, 52px); line-height: 1.05; letter-spacing: -.01em; }
+  .lede { color: var(--mute); margin-top: 14px; max-width: 34ch; }
+
+  .group { margin-top: 26px; }
+  .group h2 { font-size: 16px; font-weight: 600; color: var(--mute); margin-bottom: 10px; }
+  .seg { display: flex; gap: 10px; }
+  .seg button {
+    flex: 1; padding: 16px 12px; font: 600 19px var(--body); color: var(--ink);
+    background: var(--panel); border: 2px solid var(--line); border-radius: 14px; cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .seg button:hover { border-color: var(--mute); }
+  .seg button[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
+
+  .primary {
+    margin-top: 32px; width: 100%; padding: 20px; font: 700 21px var(--display);
+    background: var(--amber); color: var(--amber-ink); border: 0; border-radius: 16px; cursor: pointer;
+  }
+  .primary:hover { filter: brightness(1.08); }
+
+  /* stations */
+  .stations { list-style: none; padding: 0; margin-top: 30px; display: grid; gap: 4px; }
+  .stations li { display: flex; align-items: center; gap: 14px; padding: 12px 0; color: var(--mute); border-top: 1px solid var(--line); }
+  .stations li:first-child { border-top: 0; }
+  .stations .mark { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: 14px; flex: none; }
+  .stations li.active { color: var(--ink); }
+  .stations li.active .mark { border-color: var(--amber); background: radial-gradient(circle, var(--amber) 38%, transparent 42%); }
+  .stations li.done { color: var(--ink); }
+  .stations li.done .mark { background: var(--ok); border-color: var(--ok); color: #0b2415; }
+  .stations li.done .mark::after { content: "✓"; font-weight: 700; }
+  .stations small { display: block; color: var(--mute); font-size: 14px; }
+
+  .order-line { margin-top: 18px; color: var(--mute); }
+
+  /* demo drawer */
+  details.demo { position: fixed; left: 16px; bottom: 16px; font-size: 14px; color: var(--mute); }
+  details.demo summary { cursor: pointer; padding: 6px 10px; }
+  .demo-btns { display: flex; flex-wrap: wrap; gap: 6px; max-width: 360px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .demo-btns button { font: 500 13px var(--body); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .demo-btns button:hover { border-color: var(--mute); }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body data-screen="idle">
+
+<header>
+  <div class="brand">Coffee machine</div>
+  <div class="conn" id="conn">
+    <span class="dot"></span><span id="connText">Arduino not connected</span>
+    <button class="btn-ghost" id="connectBtn">Connect</button>
+  </div>
+</header>
+
+<main>
+  <div class="stage">
+    <svg id="cup" viewBox="0 0 250 270" role="img" aria-label="Your cup">
+      <defs>
+        <clipPath id="inside"><path d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/></clipPath>
+      </defs>
+      <ellipse class="saucer" cx="120" cy="232" rx="104" ry="13"/>
+      <path class="handle" d="M197 98 C240 96 238 176 186 182"/>
+      <g clip-path="url(#inside)">
+        <rect id="coffee" class="layer" x="30" width="180" y="222" height="0"/>
+        <rect id="water"  class="layer" x="30" width="180" y="222" height="0"/>
+        <rect id="milk"   class="layer" x="30" width="180" y="222" height="0"/>
+      </g>
+      <g class="sugar" id="sugar1"><circle cx="96" cy="104" r="4"/><circle cx="112" cy="100" r="3.5"/><circle cx="104" cy="112" r="3"/></g>
+      <g class="sugar" id="sugar2"><circle cx="140" cy="104" r="4"/><circle cx="154" cy="110" r="3.5"/><circle cx="130" cy="112" r="3"/></g>
+      <path class="cup-wall" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
+      <ellipse class="cup-wall" cx="120" cy="72" rx="78" ry="9" style="fill:none"/>
+      <path class="ghost-cup" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
+      <g class="steam"><path d="M92 54 q-10 -14 0 -28"/><path d="M120 50 q-10 -14 0 -28"/><path d="M148 54 q-10 -14 0 -28"/></g>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <!-- 1. idle -->
+    <section id="s-idle">
+      <h1>Place your cup on the disc</h1>
+      <p class="lede">The menu appears as soon as the sensor detects your cup.</p>
+    </section>
+
+    <!-- 2. menu -->
+    <section id="s-menu" hidden>
+      <h1>Make it yours</h1>
+      <div class="group"><h2>Coffee shots</h2>
+        <div class="seg" data-key="shots">
+          <button data-v="1" aria-pressed="true">1 shot</button>
+          <button data-v="2" aria-pressed="false">2 shots</button>
+        </div></div>
+      <div class="group"><h2>Milk</h2>
+        <div class="seg" data-key="milk">
+          <button data-v="0" aria-pressed="true">No milk</button>
+          <button data-v="1" aria-pressed="false">Add milk</button>
+        </div></div>
+      <div class="group"><h2>Sugar</h2>
+        <div class="seg" data-key="sugar">
+          <button data-v="0" aria-pressed="true">None</button>
+          <button data-v="1" aria-pressed="false">1</button>
+          <button data-v="2" aria-pressed="false">2</button>
+        </div></div>
+      <button class="primary" id="submit">Make my coffee</button>
+    </section>
+
+    <!-- 3. brewing -->
+    <section id="s-brew" hidden>
+      <h1 id="brewTitle">Making your coffee</h1>
+      <p class="order-line" id="orderLine"></p>
+      <ul class="stations" id="stations">
+        <li data-n="1"><span class="mark"></span><div>Coffee<small>Grinds dispensed, brewing</small></div></li>
+        <li data-n="2"><span class="mark"></span><div>Water and milk<small>Topping up your cup</small></div></li>
+        <li data-n="3"><span class="mark"></span><div>Sugar<small>Sweetening</small></div></li>
+      </ul>
+    </section>
+
+    <!-- 4. pickup -->
+    <section id="s-pickup" hidden>
+      <h1>Your coffee is ready</h1>
+      <p class="lede">Lift your cup from the disc.</p>
+    </section>
+
+    <!-- 5. done -->
+    <section id="s-done" hidden>
+      <h1>Enjoy your coffee</h1>
+      <p class="lede">Ready for the next person?</p>
+      <button class="primary" id="next">Next customer</button>
+    </section>
+  </div>
+</main>
+
+<details class="demo">
+  <summary>Demo controls</summary>
+  <div class="demo-btns">
+    <button data-line="STATE:IDLE">Idle</button>
+    <button data-line="STATE:MENU">Cup detected</button>
+    <button data-line="POS:1">Station 1</button>
+    <button data-line="POS:2">Station 2</button>
+    <button data-line="POS:3">Station 3</button>
+    <button data-line="STATE:PICKUP">Cup back</button>
+    <button data-line="STATE:DONE">Cup removed</button>
+  </div>
+</details>
+
+<script>
+/* ---------- Serial protocol ----------
+   Arduino -> laptop (one line each, ending in \n):
+     STATE:IDLE | STATE:MENU | STATE:BREW | POS:1 | POS:2 | POS:3 | STATE:PICKUP | STATE:DONE
+   Laptop -> Arduino:
+     ORDER:<shots>,<milk>,<sugar>   e.g. ORDER:2,1,1
+     RESET
+-------------------------------------- */
+const BAUD = 9600;
+const $ = s => document.querySelector(s);
+const order = { shots: 1, milk: 0, sugar: 0 };
+let stage = 0;
+
+/* ---------- screens ---------- */
+const screens = ["idle", "menu", "brew", "pickup", "done"];
+function show(name) {
+  document.body.dataset.screen = name;
+  screens.forEach(s => $("#s-" + s).hidden = (s !== name));
+  render();
+}
+
+/* ---------- cup drawing ---------- */
+function setLayer(id, top, h) {
+  const el = $("#" + id);
+  el.style.y = (222 - top) + "px";
+  el.style.height = h + "px";
+}
+function render() {
+  const screen = document.body.dataset.screen;
+  const preview = screen === "menu";
+  const st = preview ? 3 : stage;
+  const coffee = order.shots === 2 ? 62 : 40;
+  const total = 120, milk = order.milk ? 38 : 0;
+  const waterTop = total - milk;
+  const done = ["pickup", "done"].includes(screen);
+  const s = done ? 3 : st;
+
+  setLayer("coffee", coffee, s >= 1 ? coffee : 0);
+  setLayer("water", waterTop, s >= 2 ? waterTop - coffee : 0);
+  $("#water").style.y = (222 - waterTop) + "px";
+  setLayer("milk", total, s >= 2 ? milk : 0);
+  $("#milk").style.y = (222 - total) + "px";
+  if (s < 2) { $("#water").style.y = "222px"; $("#milk").style.y = "222px"; }
+  if (s < 1) $("#coffee").style.y = "222px";
+
+  $("#sugar1").classList.toggle("on", s >= 3 && order.sugar >= 1);
+  $("#sugar2").classList.toggle("on", s >= 3 && order.sugar >= 2);
+
+  document.querySelectorAll("#stations li").forEach(li => {
+    const n = +li.dataset.n;
+    li.classList.toggle("done", done || stage > n || (stage === n && false));
+    li.classList.toggle("active", !done && stage === n);
+  });
+  $("#orderLine").textContent =
+    `${order.shots} shot${order.shots > 1 ? "s" : ""}` +
+    (order.milk ? ", milk" : "") +
+    (order.sugar ? `, ${order.sugar} sugar${order.sugar > 1 ? "s" : ""}` : ", no sugar");
+}
+
+/* ---------- menu ---------- */
+document.querySelectorAll(".seg").forEach(seg => {
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    order[seg.dataset.key] = +b.dataset.v;
+    render();
+  });
+});
+$("#submit").addEventListener("click", () => {
+  send(`ORDER:${order.shots},${order.milk},${order.sugar}`);
+  stage = 0;
+  show("brew");
+});
+$("#next").addEventListener("click", () => {
+  send("RESET");
+  resetLocal();
+  show("idle");
+});
+function resetLocal() {
+  stage = 0; order.shots = 1; order.milk = 0; order.sugar = 0;
+  document.querySelectorAll(".seg").forEach(seg => {
+    seg.querySelectorAll("button").forEach((b, i) =>
+      b.setAttribute("aria-pressed", +b.dataset.v === order[seg.dataset.key]));
+  });
+}
+
+/* ---------- messages from the Arduino ---------- */
+function handle(raw) {
+  const line = raw.trim().toUpperCase();
+  if (!line) return;
+  let m;
+  if (line === "STATE:IDLE")        { resetLocal(); show("idle"); }
+  else if (line === "STATE:MENU")   { show("menu"); }
+  else if (line === "STATE:BREW")   { stage = 0; show("brew"); }
+  else if ((m = line.match(/^POS:([1-3])$/))) { stage = +m[1]; show("brew"); }
+  else if (line === "STATE:PICKUP") { show("pickup"); }
+  else if (line === "STATE:DONE")   { show("done"); }
+}
+document.querySelectorAll("[data-line]").forEach(b =>
+  b.addEventListener("click", () => handle(b.dataset.line)));
+
+/* ---------- Web Serial ---------- */
+let port, writer;
+async function send(msg) {
+  if (!writer) return;
+  try { await writer.write(msg + "\n"); } catch (e) { console.error(e); }
+}
+function setConn(on, text) {
+  $("#conn").classList.toggle("on", on);
+  $("#connText").textContent = text;
+  $("#connectBtn").hidden = on;
+}
+async function connect() {
+  if (!("serial" in navigator)) { setConn(false, "Use Chrome or Edge to connect"); return; }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: BAUD });
+    const enc = new TextEncoderStream();
+    enc.readable.pipeTo(port.writable);
+    writer = enc.writable.getWriter();
+    setConn(true, "Arduino connected");
+    readLoop();
+  } catch (e) { console.error(e); setConn(false, "Could not connect, try again"); }
+}
+async function readLoop() {
+  const dec = new TextDecoderStream();
+  port.readable.pipeTo(dec.writable);
+  const reader = dec.readable.getReader();
+  let buf = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    }
+  } catch (e) { console.error(e); }
+  writer = null; setConn(false, "Arduino disconnected");
+}
+$("#connectBtn").addEventListener("click", connect);
+
+show("idle");
+</script>
+</body>
+</html>
