@@ -143,7 +143,6 @@
         <rect id="milk"   class="layer" x="30" width="180" y="222" height="0"/>
       </g>
       <g class="sugar" id="sugar1"><circle cx="96" cy="104" r="4"/><circle cx="112" cy="100" r="3.5"/><circle cx="104" cy="112" r="3"/></g>
-      <g class="sugar" id="sugar2"><circle cx="140" cy="104" r="4"/><circle cx="154" cy="110" r="3.5"/><circle cx="130" cy="112" r="3"/></g>
       <path class="cup-wall" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
       <ellipse class="cup-wall" cx="120" cy="72" rx="78" ry="9" style="fill:none"/>
       <path class="ghost-cup" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
@@ -155,17 +154,12 @@
     <!-- 1. idle -->
     <section id="s-idle">
       <h1>Place your cup on the disc</h1>
-      <p class="lede">The menu appears as soon as the sensor detects your cup.</p>
+      <p class="lede" id="idleNote">The menu appears as soon as the sensor detects your cup.</p>
     </section>
 
     <!-- 2. menu -->
     <section id="s-menu" hidden>
       <h1>Make it yours</h1>
-      <div class="group"><h2>Coffee shots</h2>
-        <div class="seg" data-key="shots">
-          <button data-v="1" aria-pressed="true">1 shot</button>
-          <button data-v="2" aria-pressed="false">2 shots</button>
-        </div></div>
       <div class="group"><h2>Milk</h2>
         <div class="seg" data-key="milk">
           <button data-v="0" aria-pressed="true">No milk</button>
@@ -173,11 +167,10 @@
         </div></div>
       <div class="group"><h2>Sugar</h2>
         <div class="seg" data-key="sugar">
-          <button data-v="0" aria-pressed="true">None</button>
-          <button data-v="1" aria-pressed="false">1</button>
-          <button data-v="2" aria-pressed="false">2</button>
+          <button data-v="0" aria-pressed="true">No sugar</button>
+          <button data-v="1" aria-pressed="false">Add sugar</button>
         </div></div>
-      <button class="primary" id="submit">Make my coffee</button>
+      <button class="primary" id="start">Start</button>
     </section>
 
     <!-- 3. brewing -->
@@ -185,55 +178,51 @@
       <h1 id="brewTitle">Making your coffee</h1>
       <p class="order-line" id="orderLine"></p>
       <ul class="stations" id="stations">
-        <li data-n="1"><span class="mark"></span><div>Coffee<small>Grinds dispensed, brewing</small></div></li>
-        <li data-n="2"><span class="mark"></span><div>Water and milk<small>Topping up your cup</small></div></li>
-        <li data-n="3"><span class="mark"></span><div>Sugar<small>Sweetening</small></div></li>
+        <li data-n="1"><span class="mark"></span><div>Coffee grinds<small>Grinds dispensed</small></div></li>
+        <li data-n="2"><span class="mark"></span><div>Water<small>Brewing</small></div></li>
+        <li data-n="3"><span class="mark"></span><div>Milk<small id="milkSub">Topping up your cup</small></div></li>
+        <li data-n="4"><span class="mark"></span><div>Sugar<small id="sugarSub">Sweetening</small></div></li>
       </ul>
     </section>
 
     <!-- 4. pickup -->
     <section id="s-pickup" hidden>
       <h1>Your coffee is ready</h1>
-      <p class="lede">Lift your cup from the disc.</p>
+      <p class="lede">Lift your cup from the disc. The machine resets once the cup is removed.</p>
     </section>
 
-    <!-- 5. done -->
-    <section id="s-done" hidden>
-      <h1>Enjoy your coffee</h1>
-      <p class="lede">Ready for the next person?</p>
-      <button class="primary" id="next">Next customer</button>
-    </section>
   </div>
 </main>
 
 <details class="demo">
   <summary>Demo controls</summary>
   <div class="demo-btns">
-    <button data-line="STATE:IDLE">Idle</button>
+    <button data-line="STATE:IDLE">Cup removed / idle</button>
     <button data-line="STATE:MENU">Cup detected</button>
     <button data-line="POS:1">Station 1</button>
     <button data-line="POS:2">Station 2</button>
     <button data-line="POS:3">Station 3</button>
-    <button data-line="STATE:PICKUP">Cup back</button>
-    <button data-line="STATE:DONE">Cup removed</button>
+    <button data-line="POS:4">Station 4</button>
+    <button data-line="STATE:PICKUP">Drink ready</button>
   </div>
 </details>
 
 <script>
 /* ---------- Serial protocol ----------
    Arduino -> laptop (one line each, ending in \n):
-     STATE:IDLE | STATE:MENU | STATE:BREW | POS:1 | POS:2 | POS:3 | STATE:PICKUP | STATE:DONE
-   Laptop -> Arduino:
-     ORDER:<shots>,<milk>,<sugar>   e.g. ORDER:2,1,1
-     RESET
+     STATE:IDLE | STATE:MENU | STATE:BREW | POS:1 | POS:2 | POS:3 | POS:4 | STATE:PICKUP
+   Laptop -> Arduino (sent the moment a choice is tapped):
+     MILK:0 | MILK:1
+     SUGAR:0 | SUGAR:1
+     START   (order is final, begin)
 -------------------------------------- */
 const BAUD = 9600;
 const $ = s => document.querySelector(s);
-const order = { shots: 1, milk: 0, sugar: 0 };
+const order = { milk: 0, sugar: 0 };
 let stage = 0;
 
 /* ---------- screens ---------- */
-const screens = ["idle", "menu", "brew", "pickup", "done"];
+const screens = ["idle", "menu", "brew", "pickup"];
 function show(name) {
   document.body.dataset.screen = name;
   screens.forEach(s => $("#s-" + s).hidden = (s !== name));
@@ -249,33 +238,32 @@ function setLayer(id, top, h) {
 function render() {
   const screen = document.body.dataset.screen;
   const preview = screen === "menu";
-  const st = preview ? 3 : stage;
-  const coffee = order.shots === 2 ? 62 : 40;
-  const total = 120, milk = order.milk ? 38 : 0;
-  const waterTop = total - milk;
-  const done = ["pickup", "done"].includes(screen);
-  const s = done ? 3 : st;
+  const done = screen === "pickup";
+  const s = (preview || done) ? 4 : stage;      // 0..4 = how many steps are finished/active
+  const total = 120, grinds = 30;
+  const milk = order.milk ? 34 : 0;
+  const waterTop = total - milk;                 // water fills up to here, milk sits on top
 
-  setLayer("coffee", coffee, s >= 1 ? coffee : 0);
-  setLayer("water", waterTop, s >= 2 ? waterTop - coffee : 0);
-  $("#water").style.y = (222 - waterTop) + "px";
-  setLayer("milk", total, s >= 2 ? milk : 0);
-  $("#milk").style.y = (222 - total) + "px";
-  if (s < 2) { $("#water").style.y = "222px"; $("#milk").style.y = "222px"; }
+  const layer = (id, top, h) => { const el = $("#" + id); el.style.y = (222 - top) + "px"; el.style.height = h + "px"; };
+  layer("coffee", grinds, s >= 1 ? grinds : 0);
+  layer("water",  waterTop, s >= 2 ? waterTop - grinds : 0);
+  layer("milk",   total, s >= 3 ? milk : 0);
   if (s < 1) $("#coffee").style.y = "222px";
+  if (s < 2) $("#water").style.y  = "222px";
+  if (s < 3) $("#milk").style.y   = "222px";
 
-  $("#sugar1").classList.toggle("on", s >= 3 && order.sugar >= 1);
-  $("#sugar2").classList.toggle("on", s >= 3 && order.sugar >= 2);
+  $("#sugar1").classList.toggle("on", s >= 4 && order.sugar >= 1);
+
+  $("#milkSub").textContent  = order.milk  ? "Topping up your cup" : "Skipped";
+  $("#sugarSub").textContent = order.sugar ? "Sweetening"          : "Skipped";
 
   document.querySelectorAll("#stations li").forEach(li => {
     const n = +li.dataset.n;
-    li.classList.toggle("done", done || stage > n || (stage === n && false));
+    li.classList.toggle("done", done || stage > n);
     li.classList.toggle("active", !done && stage === n);
   });
   $("#orderLine").textContent =
-    `${order.shots} shot${order.shots > 1 ? "s" : ""}` +
-    (order.milk ? ", milk" : "") +
-    (order.sugar ? `, ${order.sugar} sugar${order.sugar > 1 ? "s" : ""}` : ", no sugar");
+    (order.milk ? "With milk" : "No milk") + ", " + (order.sugar ? "with sugar" : "no sugar");
 }
 
 /* ---------- menu ---------- */
@@ -284,21 +272,17 @@ document.querySelectorAll(".seg").forEach(seg => {
     const b = e.target.closest("button"); if (!b) return;
     seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
     order[seg.dataset.key] = +b.dataset.v;
+    send(seg.dataset.key.toUpperCase() + ":" + b.dataset.v);
     render();
   });
 });
-$("#submit").addEventListener("click", () => {
-  send(`ORDER:${order.shots},${order.milk},${order.sugar}`);
+$("#start").addEventListener("click", () => {
+  send("START");
   stage = 0;
   show("brew");
 });
-$("#next").addEventListener("click", () => {
-  send("RESET");
-  resetLocal();
-  show("idle");
-});
 function resetLocal() {
-  stage = 0; order.shots = 1; order.milk = 0; order.sugar = 0;
+  stage = 0; order.milk = 0; order.sugar = 0;
   document.querySelectorAll(".seg").forEach(seg => {
     seg.querySelectorAll("button").forEach((b, i) =>
       b.setAttribute("aria-pressed", +b.dataset.v === order[seg.dataset.key]));
@@ -310,12 +294,18 @@ function handle(raw) {
   const line = raw.trim().toUpperCase();
   if (!line) return;
   let m;
-  if (line === "STATE:IDLE")        { resetLocal(); show("idle"); }
+  if (line === "STATE:IDLE") {
+    const prev = document.body.dataset.screen;
+    $("#idleNote").textContent =
+      (prev === "menu" || prev === "brew") ? "Cup removed, so the process was stopped. Place a cup to start again."
+      : prev === "pickup" ? "Enjoy your coffee! The menu appears when the sensor detects your next cup."
+      : "The menu appears as soon as the sensor detects your cup.";
+    resetLocal(); show("idle");
+  }
   else if (line === "STATE:MENU")   { show("menu"); }
   else if (line === "STATE:BREW")   { stage = 0; show("brew"); }
-  else if ((m = line.match(/^POS:([1-3])$/))) { stage = +m[1]; show("brew"); }
+  else if ((m = line.match(/^POS:([1-4])$/))) { stage = +m[1]; show("brew"); }
   else if (line === "STATE:PICKUP") { show("pickup"); }
-  else if (line === "STATE:DONE")   { show("done"); }
 }
 document.querySelectorAll("[data-line]").forEach(b =>
   b.addEventListener("click", () => handle(b.dataset.line)));
