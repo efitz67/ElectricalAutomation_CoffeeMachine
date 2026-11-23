@@ -94,6 +94,8 @@
     background: var(--amber); color: var(--amber-ink); border: 0; border-radius: 16px; cursor: pointer;
   }
   .primary:hover { filter: brightness(1.08); }
+  .primary:disabled { background: var(--panel); color: var(--mute); border: 2px solid var(--line); cursor: not-allowed; filter: none; }
+  .hint { margin-top: 12px; font-size: 15px; color: var(--mute); text-align: center; }
 
   /* stations */
   .stations { list-style: none; padding: 0; margin-top: 30px; display: grid; gap: 4px; }
@@ -139,10 +141,10 @@
       <path class="handle" d="M197 98 C240 96 238 176 186 182"/>
       <g clip-path="url(#inside)">
         <rect id="coffee" class="layer" x="30" width="180" y="222" height="0"/>
+        <g class="sugar" id="sugar1"><circle cx="96" cy="186" r="4"/><circle cx="112" cy="183" r="3.5"/><circle cx="104" cy="189" r="3"/></g>
         <rect id="water"  class="layer" x="30" width="180" y="222" height="0"/>
         <rect id="milk"   class="layer" x="30" width="180" y="222" height="0"/>
       </g>
-      <g class="sugar" id="sugar1"><circle cx="96" cy="104" r="4"/><circle cx="112" cy="100" r="3.5"/><circle cx="104" cy="112" r="3"/></g>
       <path class="cup-wall" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
       <ellipse class="cup-wall" cx="120" cy="72" rx="78" ry="9" style="fill:none"/>
       <path class="ghost-cup" d="M42 72 L198 72 L176 214 Q174 222 166 222 L74 222 Q66 222 64 214 Z"/>
@@ -162,15 +164,16 @@
       <h1>Make it yours</h1>
       <div class="group"><h2>Milk</h2>
         <div class="seg" data-key="milk">
-          <button data-v="0" aria-pressed="true">No milk</button>
+          <button data-v="0" aria-pressed="false">No milk</button>
           <button data-v="1" aria-pressed="false">Add milk</button>
         </div></div>
       <div class="group"><h2>Sugar</h2>
         <div class="seg" data-key="sugar">
-          <button data-v="0" aria-pressed="true">No sugar</button>
+          <button data-v="0" aria-pressed="false">No sugar</button>
           <button data-v="1" aria-pressed="false">Add sugar</button>
         </div></div>
-      <button class="primary" id="start">Start</button>
+      <button class="primary" id="start" disabled>Start</button>
+      <p class="hint" id="startHint">Choose milk and sugar to continue.</p>
     </section>
 
     <!-- 3. brewing -->
@@ -179,9 +182,9 @@
       <p class="order-line" id="orderLine"></p>
       <ul class="stations" id="stations">
         <li data-n="1"><span class="mark"></span><div>Coffee grinds<small>Grinds dispensed</small></div></li>
-        <li data-n="2"><span class="mark"></span><div>Water<small>Brewing</small></div></li>
-        <li data-n="3"><span class="mark"></span><div>Milk<small id="milkSub">Topping up your cup</small></div></li>
-        <li data-n="4"><span class="mark"></span><div>Sugar<small id="sugarSub">Sweetening</small></div></li>
+        <li data-n="2"><span class="mark"></span><div>Sugar<small id="sugarSub">Sweetening</small></div></li>
+        <li data-n="3"><span class="mark"></span><div>Water<small>Brewing</small></div></li>
+        <li data-n="4"><span class="mark"></span><div>Milk<small id="milkSub">Topping up your cup</small></div></li>
       </ul>
     </section>
 
@@ -199,10 +202,10 @@
   <div class="demo-btns">
     <button data-line="STATE:IDLE">Cup removed / idle</button>
     <button data-line="STATE:MENU">Cup detected</button>
-    <button data-line="POS:1">Station 1</button>
-    <button data-line="POS:2">Station 2</button>
-    <button data-line="POS:3">Station 3</button>
-    <button data-line="POS:4">Station 4</button>
+    <button data-line="POS:1">Coffee</button>
+    <button data-line="POS:2">Sugar</button>
+    <button data-line="POS:3">Water</button>
+    <button data-line="POS:4">Milk</button>
     <button data-line="STATE:PICKUP">Drink ready</button>
   </div>
 </details>
@@ -211,6 +214,7 @@
 /* ---------- Serial protocol ----------
    Arduino -> laptop (one line each, ending in \n):
      STATE:IDLE | STATE:MENU | STATE:BREW | POS:1 | POS:2 | POS:3 | POS:4 | STATE:PICKUP
+     (POS:1 coffee, POS:2 sugar, POS:3 water, POS:4 milk: the order the PLC runs)
    Laptop -> Arduino (sent the moment a choice is tapped):
      MILK:0 | MILK:1
      SUGAR:0 | SUGAR:1
@@ -218,7 +222,7 @@
 -------------------------------------- */
 const BAUD = 9600;
 const $ = s => document.querySelector(s);
-const order = { milk: 0, sugar: 0 };
+const order = { milk: null, sugar: null };   // null = not chosen yet
 let stage = 0;
 
 /* ---------- screens ---------- */
@@ -246,13 +250,14 @@ function render() {
 
   const layer = (id, top, h) => { const el = $("#" + id); el.style.y = (222 - top) + "px"; el.style.height = h + "px"; };
   layer("coffee", grinds, s >= 1 ? grinds : 0);
-  layer("water",  waterTop, s >= 2 ? waterTop - grinds : 0);
-  layer("milk",   total, s >= 3 ? milk : 0);
+  layer("water",  waterTop, s >= 3 ? waterTop - grinds : 0);
+  layer("milk",   total, s >= 4 ? milk : 0);
   if (s < 1) $("#coffee").style.y = "222px";
-  if (s < 2) $("#water").style.y  = "222px";
-  if (s < 3) $("#milk").style.y   = "222px";
+  if (s < 3) $("#water").style.y  = "222px";
+  if (s < 4) $("#milk").style.y   = "222px";
 
-  $("#sugar1").classList.toggle("on", s >= 4 && order.sugar >= 1);
+  // sugar drops onto the coffee at step 2; the water then covers it
+  $("#sugar1").classList.toggle("on", s >= 2 && order.sugar >= 1);
 
   $("#milkSub").textContent  = order.milk  ? "Topping up your cup" : "Skipped";
   $("#sugarSub").textContent = order.sugar ? "Sweetening"          : "Skipped";
@@ -273,20 +278,27 @@ document.querySelectorAll(".seg").forEach(seg => {
     seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
     order[seg.dataset.key] = +b.dataset.v;
     send(seg.dataset.key.toUpperCase() + ":" + b.dataset.v);
+    updateStart();
     render();
   });
 });
+function updateStart() {
+  const ready = order.milk !== null && order.sugar !== null;
+  $("#start").disabled = !ready;
+  $("#startHint").hidden = ready;
+}
 $("#start").addEventListener("click", () => {
   send("START");
   stage = 0;
   show("brew");
 });
 function resetLocal() {
-  stage = 0; order.milk = 0; order.sugar = 0;
+  stage = 0; order.milk = null; order.sugar = null;
   document.querySelectorAll(".seg").forEach(seg => {
     seg.querySelectorAll("button").forEach((b, i) =>
       b.setAttribute("aria-pressed", +b.dataset.v === order[seg.dataset.key]));
   });
+  updateStart();
 }
 
 /* ---------- messages from the Arduino ---------- */
@@ -302,7 +314,7 @@ function handle(raw) {
       : "The menu appears as soon as the sensor detects your cup.";
     resetLocal(); show("idle");
   }
-  else if (line === "STATE:MENU")   { show("menu"); }
+  else if (line === "STATE:MENU")   { resetLocal(); show("menu"); }   // the Arduino also clears milk/sugar on entering the menu
   else if (line === "STATE:BREW")   { stage = 0; show("brew"); }
   else if ((m = line.match(/^POS:([1-4])$/))) { stage = +m[1]; show("brew"); }
   else if (line === "STATE:PICKUP") { show("pickup"); }
