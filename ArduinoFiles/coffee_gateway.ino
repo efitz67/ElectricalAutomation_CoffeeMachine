@@ -28,6 +28,16 @@
     D10 <- PLC Y13   status bit 0
     D11 <- PLC Y14   status bit 1
     D12 <- PLC Y15   status bit 2
+
+  Heater thermostat (runs on its own, independent of the PLC and the page):
+    A0  <- Pt100 temperature probe: 5V -> reference resistor (390R) -> A0 -> Pt100 -> GND
+           (join the two red wires together and the two white wires together;
+            optional 100 nF capacitor from A0 to GND to calm the reading)
+    D8  -> heater switch: logic-level N-MOSFET gate (100R in series, 10k gate to GND)
+  The heater turns ON below TEMP_ON_BELOW and OFF above TEMP_OFF_ABOVE.
+  If the probe is missing or faulty the heater is forced OFF.
+  Extra serial lines like "TEMP:31.2,HEATER:ON" are ignored by the page.
+  No extra libraries are needed.
 */
 
 // ---------- Arduino -> PLC ----------
@@ -121,6 +131,78 @@ void pulse(uint8_t pin) {
   out(pin, false);
 }
 
+// ---------- Heater + temperature (independent of the PLC) ----------
+const uint8_t PIN_TEMP   = A0;    // Pt100 divider midpoint
+const uint8_t PIN_HEATER = 8;     // -> MOSFET gate (HIGH = heater on)
+const bool HEATER_ACTIVE_LOW = false;   // set true if you use an active-LOW relay module
+
+// Pt100 divider: 5V -> R_REF -> A0 -> Pt100 -> GND
+const float R_REF      = 390.0;   // ohms: MEASURE your resistor with the multimeter and type its real value here
+const float R0         = 100.0;   // Pt100 resistance at 0 degC
+const float TEMP_CAL_C = 0.0;     // calibration offset (degC): adjust after comparing with a thermometer
+const uint8_t SAMPLES  = 64;      // readings averaged per measurement
+
+const float TEMP_ON_BELOW  = 33.0;   // heater switches ON below this (deg C)
+const float TEMP_OFF_ABOVE = 37.0;   // heater switches OFF above this (deg C)
+const float TEMP_MAX       = 50.0;   // hard safety cut-off (deg C)
+
+const unsigned long TEMP_PERIOD_MS = 2000;  // how often we measure
+const unsigned long PRINT_MS       = 5000;  // how often TEMP: lines are printed
+
+bool heaterOn = false;
+bool sensorOk = true;
+unsigned long lastTempRead = 0;
+unsigned long lastTempPrint = 0;
+
+void setHeater(bool on) {
+  heaterOn = on;
+  digitalWrite(PIN_HEATER, (on != HEATER_ACTIVE_LOW) ? HIGH : LOW);
+}
+
+// Returns the temperature in deg C, or NAN if the probe looks open or shorted.
+float readTempC() {
+  long sum = 0;
+  for (uint8_t i = 0; i < SAMPLES; i++) {
+    sum += analogRead(PIN_TEMP);
+    delayMicroseconds(200);
+  }
+  float adc = sum / (float)SAMPLES;
+  if (adc < 5.0 || adc > 1018.0) return NAN;          // open or shorted probe
+
+  float r = R_REF * adc / (1023.0 - adc);             // Pt100 resistance in ohms
+  // Callendar-Van Dusen (0 to 100 degC): R = R0 * (1 + A*T + B*T^2), solved for T
+  const float A = 3.9083e-3, B = -5.775e-7;
+  float inner = A * A - 4.0 * B * (1.0 - r / R0);
+  if (inner < 0) return NAN;
+  return (-A + sqrt(inner)) / (2.0 * B) + TEMP_CAL_C;
+}
+
+void pollTemperature() {
+  unsigned long now = millis();
+  if (now - lastTempRead < TEMP_PERIOD_MS) return;
+  lastTempRead = now;
+
+  float t = readTempC();
+  if (isnan(t) || t < -20.0 || t > 120.0) {           // probe missing or faulty
+    setHeater(false);
+    if (sensorOk) Serial.println(F("ERROR:TEMP_SENSOR"));
+    sensorOk = false;
+    return;
+  }
+  sensorOk = true;
+
+  bool wasOn = heaterOn;
+  if (t >= TEMP_OFF_ABOVE || t >= TEMP_MAX) setHeater(false);
+  else if (t <= TEMP_ON_BELOW) setHeater(true);
+  // between the two limits: keep the current state (hysteresis)
+
+  if (heaterOn != wasOn || now - lastTempPrint >= PRINT_MS) {
+    lastTempPrint = now;
+    Serial.print(F("TEMP:")); Serial.print(t, 1);
+    Serial.print(F(",HEATER:")); Serial.println(heaterOn ? "ON" : "OFF");
+  }
+}
+
 // ---------- Arduino entry points ----------
 void setup() {
   Serial.begin(9600);
@@ -135,6 +217,10 @@ void setup() {
   pinMode(PIN_ST0, inMode);
   pinMode(PIN_ST1, inMode);
   pinMode(PIN_ST2, inMode);
+
+  // Heater (starts OFF) and temperature probe
+  setHeater(false);               // set the "off" level first, then make it an output
+  pinMode(PIN_HEATER, OUTPUT);
 }
 
 void loop() {
@@ -148,4 +234,5 @@ void loop() {
     }
   }
   pollStatus();
+  pollTemperature();
 }
